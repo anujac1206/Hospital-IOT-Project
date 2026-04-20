@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   LineChart,
   Line,
@@ -7,172 +7,163 @@ import {
   CartesianGrid,
   Tooltip,
   ResponsiveContainer,
-  AreaChart,
-  Area,
-  Defs,
-  LinearGradient,
+  ReferenceArea,
 } from "recharts";
-import { Activity, Heart } from "lucide-react";
+import { Heart } from "lucide-react";
 
-const BASELINE = 72;
-const DATA_POINTS = 30;
-
-// Generates a more organic, undulating data point
-const generateOrganicPoint = (prevPulse, time) => {
-  // Use a sine wave to simulate natural physiological drift (e.g., breathing)
-  const drift = Math.sin(time / 5) * 2;
-  // Add a small amount of "jitter" (Heart Rate Variability)
-  const hrv = (Math.random() - 0.5) * 3;
-  
-  // Occasional natural "surge" (simulating a deep breath or movement)
-  const surge = Math.random() > 0.96 ? (Math.random() * 8) : 0;
-  
-  let newPulse = prevPulse * 0.8 + (BASELINE + drift + surge) * 0.2 + hrv;
-  return Math.round(newPulse);
+// Generate initial smooth baseline
+const generateInitialData = (length = 20, basePulse = 75) => {
+  const data = [];
+  let lastValue = basePulse;
+  for (let i = 0; i < length; i++) {
+    let change = (Math.random() - 0.5) * 1.5;
+    let newValue = lastValue + change;
+    newValue = newValue * 0.95 + basePulse * 0.05;
+    newValue = Math.min(100, Math.max(60, Math.round(newValue)));
+    data.push({ time: `${i}s`, pulse: newValue });
+    lastValue = newValue;
+  }
+  return data;
 };
 
-export default function PulseGraph({ demoMode = true, patientId = "PT-8821" }) {
-  const [data, setData] = useState(() => {
-    let initial = [];
-    let last = BASELINE;
-    for (let i = 0; i < DATA_POINTS; i++) {
-      last = generateOrganicPoint(last, i);
-      initial.push({ time: i, pulse: last });
+export default function PulseGraph({ demoMode = true, patientId = "N/A", livePulse }) {
+  const [data, setData] = useState(() => generateInitialData(20, 75));
+  const lastPulseRef = useRef(75);
+
+  const generateSpikyPoint = (prevPulse, baseLine = 75) => {
+    let newPulse = prevPulse;
+    const spikeChance = 0.15;
+    const isSpike = Math.random() < spikeChance;
+
+    if (isSpike) {
+      const spikeType = Math.random() > 0.5 ? "up" : "down";
+      if (spikeType === "up") {
+        const increment = 15 + Math.random() * 15;
+        newPulse = prevPulse + increment;
+      } else {
+        const decrement = 10 + Math.random() * 10;
+        newPulse = prevPulse - decrement;
+      }
+    } else {
+      let change = (Math.random() - 0.5) * 2.5;
+      newPulse = prevPulse + change;
+      newPulse = newPulse * 0.7 + baseLine * 0.3;
     }
-    return initial;
-  });
+    newPulse = Math.min(130, Math.max(40, Math.round(newPulse)));
+    return newPulse;
+  };
 
-  const [counter, setCounter] = useState(DATA_POINTS);
+  // Real mode: use livePulse from parent
+  useEffect(() => {
+    if (livePulse !== undefined && !demoMode) {
+      setData((prevData) => {
+        const newPoint = { time: `${prevData.length}s`, pulse: livePulse };
+        const newData = [...prevData.slice(1), newPoint];
+        return newData.map((point, idx) => ({ ...point, time: `${idx}s` }));
+      });
+      lastPulseRef.current = livePulse;
+    }
+  }, [livePulse, demoMode]);
 
+  // Demo mode: self‑generate spiky data
   useEffect(() => {
     if (!demoMode) return;
-
     const interval = setInterval(() => {
-      setData((prev) => {
-        const lastPulse = prev[prev.length - 1].pulse;
-        const nextPulse = generateOrganicPoint(lastPulse, counter);
-        const newData = [...prev.slice(1), { time: counter, pulse: nextPulse }];
-        return newData;
+      setData((prevData) => {
+        const lastPulse = prevData[prevData.length - 1]?.pulse || 75;
+        const newPulse = generateSpikyPoint(lastPulse, 75);
+        const newPoint = { time: `${prevData.length}s`, pulse: newPulse };
+        const newData = [...prevData.slice(1), newPoint];
+        return newData.map((point, idx) => ({ ...point, time: `${idx}s` }));
       });
-      setCounter((c) => c + 1);
     }, 1000);
-
     return () => clearInterval(interval);
-  }, [demoMode, counter]);
+  }, [demoMode]);
 
-  const currentPulse = data[data.length - 1].pulse;
+  const currentPulse = data[data.length - 1]?.pulse || "--";
+
+  const CustomTooltip = ({ active, payload, label }) => {
+    if (active && payload && payload.length) {
+      return (
+        <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg p-3">
+          <p className="text-sm text-gray-500 dark:text-gray-400">{`Time: ${label}`}</p>
+          <p className="text-2xl font-bold text-red-600 dark:text-red-400">
+            {payload[0].value} <span className="text-sm font-normal">BPM</span>
+          </p>
+        </div>
+      );
+    }
+    return null;
+  };
 
   return (
-    <div className="bg-[#0f172a] text-slate-100 rounded-3xl p-6 shadow-2xl border border-slate-800 w-full max-w-2xl mx-auto font-sans">
-      {/* Header Section */}
-      <div className="flex justify-between items-start mb-8">
-        <div className="flex gap-4 items-center">
-          <div className="p-3 bg-red-500/10 rounded-2xl">
-            <Activity className="w-6 h-6 text-red-500" />
-          </div>
+    <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-lg border border-gray-100 dark:border-gray-800 p-5 w-full transition-all">
+      <div className="flex justify-between items-center mb-4">
+        <div className="flex items-center gap-2">
+          <Heart className="w-6 h-6 text-red-500 animate-pulse" />
           <div>
-            <h2 className="text-sm font-medium text-slate-400 uppercase tracking-wider">
-              Vitals Monitor
+            <h2 className="text-xl font-semibold text-gray-800 dark:text-gray-100">
+              Heart Rate Monitor
             </h2>
-            <div className="flex items-center gap-2">
-              <span className="text-lg font-semibold">{patientId}</span>
-              <span className="px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-500 text-[10px] font-bold">
-                LIVE
-              </span>
-            </div>
+            <p className="text-xs text-gray-500 dark:text-gray-400">
+              {demoMode
+                ? "Simulated patient data (spiky pattern)"
+                : `Patient ${patientId} · Real-time`}
+            </p>
           </div>
         </div>
-
-        <div className="flex flex-col items-end">
-          <div className="flex items-center gap-2">
-            <Heart 
-              className="w-5 h-5 text-red-500 fill-red-500" 
-              style={{ 
-                animation: `pulse ${60/currentPulse}s ease-in-out infinite` 
-              }}
-            />
-            <span className="text-5xl font-black tabular-nums tracking-tighter text-white">
-              {currentPulse}
-            </span>
+        <div className="text-right">
+          <div className="text-3xl font-bold text-red-600 dark:text-red-400">
+            {currentPulse}
           </div>
-          <span className="text-xs text-slate-500 font-medium tracking-widest uppercase">
-            BPM / Sinus Rhythm
-          </span>
+          <div className="text-xs text-gray-500">beats per minute</div>
         </div>
       </div>
 
-      {/* Chart Section */}
-      <div className="h-[250px] w-full">
-        <ResponsiveContainer width="100%" height="100%">
-          <AreaChart data={data}>
-            <defs>
-              <linearGradient id="colorPulse" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="#ef4444" stopOpacity={0.3} />
-                <stop offset="95%" stopColor="#ef4444" stopOpacity={0} />
-              </linearGradient>
-            </defs>
-            <CartesianGrid 
-              vertical={false} 
-              stroke="#1e293b" 
-              strokeDasharray="4 4" 
-            />
-            <XAxis hide dataKey="time" />
-            <YAxis 
-              domain={['dataMin - 10', 'dataMax + 10']} 
-              orientation="right"
-              axisLine={false}
-              tickLine={false}
-              tick={{ fill: '#475569', fontSize: 12 }}
-            />
-            <Tooltip
-              content={({ active, payload }) => {
-                if (active && payload?.length) {
-                  return (
-                    <div className="bg-slate-800 border border-slate-700 p-2 rounded-lg shadow-xl">
-                      <p className="text-red-400 font-bold text-sm">{payload[0].value} BPM</p>
-                    </div>
-                  );
-                }
-                return null;
-              }}
-            />
-            <Area
-              type="monotone"
-              dataKey="pulse"
-              stroke="#ef4444"
-              strokeWidth={3}
-              fillOpacity={1}
-              fill="url(#colorPulse)"
-              isAnimationActive={false} // Disabled for smoother real-time feel
-            />
-          </AreaChart>
-        </ResponsiveContainer>
-      </div>
+      <ResponsiveContainer width="100%" height={280}>
+        <LineChart data={data} margin={{ top: 10, right: 20, left: 0, bottom: 0 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" strokeOpacity={0.5} />
+          <XAxis
+            dataKey="time"
+            tick={{ fontSize: 11, fill: "#64748b" }}
+            axisLine={{ stroke: "#cbd5e1" }}
+            tickLine={false}
+          />
+          <YAxis
+            domain={[40, 130]}
+            tick={{ fontSize: 11, fill: "#64748b" }}
+            axisLine={false}
+            tickLine={false}
+            label={{
+              value: "BPM",
+              angle: -90,
+              position: "insideLeft",
+              style: { fill: "#64748b", fontSize: 11 },
+              dx: -10,
+            }}
+          />
+          <Tooltip content={<CustomTooltip />} />
+          <ReferenceArea y1={60} y2={100} fill="#10b981" fillOpacity={0.05} />
+          <Line
+            type="monotone"
+            dataKey="pulse"
+            stroke="#ef4444"
+            strokeWidth={2.5}
+            dot={false}
+            activeDot={{ r: 5, fill: "#ef4444", stroke: "white", strokeWidth: 2 }}
+            isAnimationActive={true}
+            animationDuration={300}
+          />
+        </LineChart>
+      </ResponsiveContainer>
 
-      {/* Footer Info */}
-      <div className="mt-6 flex justify-between items-center border-t border-slate-800 pt-4">
-        <div className="flex gap-4">
-          <div className="flex flex-col">
-            <span className="text-[10px] text-slate-500 uppercase tracking-tighter">Status</span>
-            <span className="text-xs font-semibold text-emerald-400">Stable</span>
-          </div>
-          <div className="flex flex-col">
-            <span className="text-[10px] text-slate-500 uppercase tracking-tighter">Variability</span>
-            <span className="text-xs font-semibold text-slate-300">±2.4%</span>
-          </div>
-        </div>
-        <p className="text-[10px] text-slate-600 italic">
-          High-fidelity cardiovascular telemetry
-        </p>
+      <div className="mt-3 flex justify-between text-xs text-gray-400">
+        <span>Updates every second · Spikes indicate possible arrhythmia</span>
+        <span className="flex items-center gap-1">
+          <span className="inline-block w-2 h-2 rounded-full bg-green-500"></span>
+          Normal range 60–100 BPM
+        </span>
       </div>
-
-      <style jsx>{`
-        @keyframes pulse {
-          0% { transform: scale(1); }
-          50% { transform: scale(1.2); }
-          100% { transform: scale(1); }
-        }
-      `}</style>
     </div>
   );
 }

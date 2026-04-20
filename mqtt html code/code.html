@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Hospital MQTT Monitor</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/mqtt/4.3.7/mqtt.min.js"></script>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #0f172a;
+      color: white;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 40px;
+    }
+    h1 { color: #38bdf8; margin-bottom: 30px; }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 20px;
+      width: 100%;
+      max-width: 800px;
+    }
+    .card {
+      background: #1e293b;
+      border-radius: 12px;
+      padding: 24px;
+      text-align: center;
+    }
+    .card h3 { color: #94a3b8; margin: 0 0 10px 0; font-size: 14px; }
+    .card .value { font-size: 36px; font-weight: bold; color: #38bdf8; }
+    .card .unit { font-size: 14px; color: #64748b; margin-top: 4px; }
+    .alert-on  { color: #ef4444; }
+    .alert-off { color: #22c55e; }
+    #status {
+      margin-bottom: 20px;
+      padding: 8px 20px;
+      border-radius: 20px;
+      font-size: 14px;
+      background: #1e293b;
+    }
+    .connected    { color: #22c55e; }
+    .disconnected { color: #ef4444; }
+    #raw {
+      margin-top: 30px;
+      background: #1e293b;
+      padding: 16px;
+      border-radius: 12px;
+      width: 100%;
+      max-width: 800px;
+      font-size: 13px;
+      color: #94a3b8;
+      word-break: break-all;
+    }
+  </style>
+</head>
+<body>
+
+  <h1>🏥 Hospital Room 1 — Live Monitor</h1>
+  <div id="status" class="disconnected">● Connecting...</div>
+
+  <div class="grid">
+    <div class="card">
+      <h3>🌡️ TEMPERATURE</h3>
+      <div class="value" id="temp">--</div>
+      <div class="unit">°C</div>
+    </div>
+    <div class="card">
+      <h3>💧 HUMIDITY</h3>
+      <div class="value" id="hum">--</div>
+      <div class="unit">%</div>
+    </div>
+    <div class="card">
+      <h3>💡 LDR VALUE</h3>
+      <div class="value" id="ldr">--</div>
+      <div class="unit">raw</div>
+    </div>
+    <div class="card">
+      <h3>🔥 FLAME</h3>
+      <div class="value alert-off" id="flame">SAFE</div>
+    </div>
+    <div class="card">
+      <h3>🚶 MOTION</h3>
+      <div class="value alert-off" id="motion">NONE</div>
+    </div>
+    <div class="card">
+      <h3>🕒 LAST UPDATE</h3>
+      <div class="value" style="font-size:16px" id="time">--</div>
+    </div>
+  </div>
+
+  <div id="raw">Waiting for data...</div>
+
+<script>
+  const client = mqtt.connect('wss://broker.hivemq.com:8884/mqtt');
+
+  document.getElementById('status').textContent = '● Connecting...';
+
+  client.on('connect', () => {
+    document.getElementById('status').textContent = '● Connected to broker.hivemq.com';
+    document.getElementById('status').className = 'connected';
+    client.subscribe('hospital/room1');
+  });
+
+  client.on('error', (err) => {
+    document.getElementById('status').textContent = '● Connection Failed';
+    document.getElementById('status').className = 'disconnected';
+  });
+
+  client.on('message', (topic, message) => {
+    const raw = message.toString();
+    document.getElementById('raw').textContent = 'Raw: ' + raw;
+
+    try {
+      const data = JSON.parse(raw);
+
+      document.getElementById('temp').textContent   = data.temperature ?? '--';
+      document.getElementById('hum').textContent    = data.humidity    ?? '--';
+      document.getElementById('ldr').textContent    = data.ldr         ?? '--';
+
+      const flameEl  = document.getElementById('flame');
+      const motionEl = document.getElementById('motion');
+
+      if (data.flame == 1) {
+        flameEl.textContent  = 'ALERT!';
+        flameEl.className    = 'value alert-on';
+      } else {
+        flameEl.textContent  = 'SAFE';
+        flameEl.className    = 'value alert-off';
+      }
+
+      if (data.motion == 1) {
+        motionEl.textContent = 'DETECTED';
+        motionEl.className   = 'value alert-on';
+      } else {
+        motionEl.textContent = 'NONE';
+        motionEl.className   = 'value alert-off';
+      }
+
+      document.getElementById('time').textContent =
+        new Date().toLocaleTimeString();
+
+    } catch(e) {
+      document.getElementById('raw').textContent = 'Parse error: ' + raw;
+    }
+  });
+
+  client.on('disconnect', () => {
+    document.getElementById('status').textContent = '● Disconnected';
+    document.getElementById('status').className = 'disconnected';
+  });
+</script>
+
+</body>
+</html>
