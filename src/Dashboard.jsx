@@ -10,6 +10,7 @@ import { AlertPanel } from "./components/AlertPanel"
 import { usePatientData } from "./usePatientData"
 import SensorGrid from "./components/SensorGrid"
 
+import PulseGraph from "./components/PulseGraph";
 export default function Dashboard({ onBack }) {
   const [isDark, setIsDark] = useState(true)
   const [demoMode, setDemoMode] = useState(true)
@@ -204,16 +205,22 @@ export default function Dashboard({ onBack }) {
             </div>
           </div>
         </header>
+        
+  <div className="grid-fade">
+    <PatientPanel selectedPatient={selectedPatient} onPatientChange={setSelectedPatient} />
+  </div>
 
         {/* Main Content */}
-        <main className="max-w-[2000px] mx-auto px-6 py-8 space-y-8">
-          <SystemHeader alerts={alerts} />
+ <main className="max-w-[2000px] mx-auto px-6 py-8 space-y-8">
+  <SystemHeader alerts={alerts} />
+  <StatusBar patientData={patientData} demoMode={demoMode} />
 
-          <StatusBar patientData={patientData} demoMode={demoMode} />
+  {/* NEW HERO GRAPH */}
+  <PulseGraph
+    demoMode={demoMode}
+    patientId={patientData?.patientId || selectedPatient}
+  />
 
-          <div className="grid-fade">
-            <PatientPanel selectedPatient={selectedPatient} onPatientChange={setSelectedPatient} />
-          </div>
 
           {error && !demoMode && (
             <div className="bg-destructive/15 border border-destructive/50 text-destructive px-4 py-3 rounded-lg">
